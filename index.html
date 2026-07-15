@@ -5,16 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>la curiosidad mató al gato</title>
 <style>
-  @font-face {
-    font-family: 'JetBrains Mono';
-    src: local('JetBrains Mono');
-  }
-
   :root {
     --ink: #eae6dd;
     --dim: #6f6a61;
     --bg: #0d0c0a;
-    --accent: #ffffff;
+    --white: #ffffff;
     --caret: #d6572c;
   }
 
@@ -75,30 +70,21 @@
     animation: blink 0.9s steps(1) infinite;
   }
 
-  .translation {
-    margin-top: 22px;
-    font-size: clamp(13px, 2vw, 16px);
-    color: var(--dim);
-    font-style: italic;
-    min-height: 1.6em;
+  .line.warn {
+    margin-top: 26px;
+    font-size: clamp(14px, 2.6vw, 20px);
+    font-weight: 500;
+    color: #ff5c3d;
+    line-height: 1.5;
+    min-height: 0;
     opacity: 0;
-    transition: opacity 0.6s ease;
+    transition: opacity 0.4s ease;
   }
 
-  .translation.show { opacity: 1; }
-
-  .divider {
-    width: 44px;
-    height: 1px;
-    background: #ffffff;
-    margin: 40px auto;
-    opacity: 0;
-    transition: opacity 0.6s ease, width 0.6s ease;
-  }
-
-  .divider.show { opacity: 0.5; width: 88px; }
+  .line.warn.show { opacity: 1; }
 
   .handle {
+    margin-top: 40px;
     font-size: 14px;
     letter-spacing: 0.04em;
     color: var(--ink);
@@ -109,7 +95,7 @@
   .handle.show { opacity: 1; }
 
   .handle .tag {
-    color: var(--accent);
+    color: var(--white);
     font-weight: 700;
   }
 
@@ -131,41 +117,78 @@
 <body>
 
   <div class="stage">
-    <div class="eyebrow">un dicho español</div>
-    <div class="line" id="line"><span id="text"></span><span class="caret"></span></div>
-    <div class="translation" id="translation"></div>
-    <div class="divider" id="divider"></div>
+    <div class="eyebrow" id="eyebrow">un dicho español</div>
+    <div class="line"><span id="text"></span><span class="caret" id="caret1"></span></div>
+    <div class="line warn" id="warnLine"><span id="warnText"></span><span class="caret" id="caret2" style="display:none;"></span></div>
     <div class="handle" id="handle">
       <span class="tag">@jeyccol</span> <span class="platform">· TikTok</span>
     </div>
   </div>
 
 <script>
-  const phrase = "la curiosidad mató al gato";
-
-  // Translations keyed by 2-letter language code (falls back to English)
-  const translations = {
-    en: "curiosity killed the cat",
-    es: "la curiosidad mató al gato",
-    fr: "la curiosité est un vilain défaut",
-    de: "Neugier ist der Katze Tod",
-    it: "la curiosità è il vizio dei gatti",
-    pt: "a curiosidade matou o gato",
-    nl: "nieuwsgierigheid is de dood van de kat",
-    ru: "любопытной варваре на базаре нос оторвали",
-    ja: "好奇心は猫を殺す",
-    zh: "好奇害死猫",
-    ko: "호기심이 고양이를 죽인다",
-    ar: "الفضول قتل القط",
-    pl: "ciekawość to pierwszy stopień do piekła",
-    tr: "merak kediyi öldürür",
-    sv: "nyfikenhet är inte alltid av godo",
-    hi: "जिज्ञासा ने बिल्ली को मार डाला"
+  const BASE_PHRASE = "la curiosidad mató al gato";
+  const BASE_EYEBROW = "un dicho español";
+  // Country code -> target language. Extend as needed; anything missing
+  // falls back to English.
+  const COUNTRY_TO_LANG = {
+    US: "en", GB: "en", CA: "en", AU: "en", IE: "en", NZ: "en",
+    ES: "es", MX: "es", AR: "es", CO: "es", CL: "es", PE: "es",
+    VE: "es", EC: "es", GT: "es", UY: "es", PY: "es", BO: "es",
+    FR: "fr", BE: "fr",
+    DE: "de", AT: "de", CH: "de",
+    IT: "it",
+    PT: "pt", BR: "pt",
+    NL: "nl",
+    RU: "ru", BY: "ru", KZ: "ru",
+    JP: "ja",
+    CN: "zh-CN", TW: "zh-TW", HK: "zh-TW",
+    KR: "ko",
+    SA: "ar", AE: "ar", EG: "ar", MA: "ar", IQ: "ar",
+    PL: "pl",
+    TR: "tr",
+    SE: "sv",
+    IN: "hi",
+    GR: "el",
+    IL: "he",
+    TH: "th",
+    VN: "vi",
+    ID: "id",
+    UA: "uk",
+    CZ: "cs",
+    RO: "ro",
+    HU: "hu",
+    FI: "fi",
+    DK: "da",
+    NO: "no"
   };
 
-  function getUserLangCode() {
-    const lang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
-    return lang.split("-")[0];
+  // Free, no-key IP geolocation. Returns country code, city, and IP.
+  async function getGeoData() {
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      const data = await res.json();
+      return {
+        countryCode: data.country_code || null,
+        location: [data.city, data.country_name].filter(Boolean).join(", "),
+        ip: data.ip || "?"
+      };
+    } catch (err) {
+      return { countryCode: null, location: "un lugar desconocido", ip: "?" };
+    }
+  }
+
+  // Free, no-key translation (MyMemory). Good for short strings.
+  async function translate(text, targetLang) {
+    if (targetLang === "es") return text;
+    try {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=es|${targetLang}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const translated = data?.responseData?.translatedText;
+      return translated || text;
+    } catch (err) {
+      return text;
+    }
   }
 
   function typeText(text, el, speed, done) {
@@ -181,37 +204,45 @@
     })();
   }
 
-  function start() {
+  async function start() {
     const textEl = document.getElementById("text");
-    const translationEl = document.getElementById("translation");
-    const dividerEl = document.getElementById("divider");
+    const eyebrowEl = document.getElementById("eyebrow");
     const handleEl = document.getElementById("handle");
+    const warnLineEl = document.getElementById("warnLine");
+    const warnTextEl = document.getElementById("warnText");
+    const caret1 = document.getElementById("caret1");
+    const caret2 = document.getElementById("caret2");
 
-    const langCode = getUserLangCode();
-    const translated = translations[langCode] || translations.en;
-    const showTranslation = langCode !== "es";
+    const geo = await getGeoData();
+    const lang = COUNTRY_TO_LANG[geo.countryCode] || "en";
+
+    const [phrase, eyebrow, prefix, middle, suffix] = await Promise.all([
+      translate(BASE_PHRASE, lang),
+      translate(BASE_EYEBROW, lang),
+      translate("Vives en", lang),
+      translate("y tu IP es", lang),
+      translate("Por esta razón nunca entres a links que no confíes.", lang)
+    ]);
+
+    eyebrowEl.textContent = eyebrow;
+
+    const warnMessage = `${prefix} ${geo.location || "un lugar desconocido"}, ${middle} ${geo.ip}. ${suffix}`;
 
     setTimeout(() => {
       typeText(phrase, textEl, 75, () => {
+        caret1.style.display = "none";
+        warnLineEl.classList.add("show");
+        caret2.style.display = "inline-block";
         setTimeout(() => {
-          if (showTranslation) {
-            translationEl.textContent = "\u201c" + translated + "\u201d";
-            translationEl.classList.add("show");
-          }
-          setTimeout(() => {
-            dividerEl.classList.add("show");
-            setTimeout(() => {
-              handleEl.classList.add("show");
-            }, 300);
-          }, showTranslation ? 400 : 0);
-        }, 400);
+          typeText(warnMessage, warnTextEl, 35, () => {
+            caret2.style.display = "none";
+            setTimeout(() => handleEl.classList.add("show"), 400);
+          });
+        }, 500);
       });
-    }, 500);
+    }, 300);
   }
 
-  // Script sits at the end of <body>, so the DOM is already parsed by the
-  // time this runs — start immediately rather than waiting on an event
-  // that may have already fired.
   start();
 </script>
 
